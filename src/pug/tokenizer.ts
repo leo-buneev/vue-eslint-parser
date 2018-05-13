@@ -3,7 +3,10 @@
  * @copyright 2017 Toru Nagashima. All rights reserved.
  * See LICENSE file in root directory for full license.
  */
+
+/* eslint-disable class-methods-use-this, no-empty-function */
 import { Tokenizer as HTMLTokenizer } from "../html/tokenizer"
+import { ParseError, Token } from "../ast"
 
 const pugLex = require("pug-lexer") //eslint-disable-line no-restricted-globals
 
@@ -12,9 +15,10 @@ const pugLex = require("pug-lexer") //eslint-disable-line no-restricted-globals
  */
 export class PugTokenizer extends HTMLTokenizer {
     private pugTokens: any
-    private convertedPugTokens: any
+    private convertedPugTokens: Token[]
     private pugPosition: number
     private lastToken: any
+    private lastOpenedTag: any
 
     /**
      * Initialize this tokenizer.
@@ -23,22 +27,73 @@ export class PugTokenizer extends HTMLTokenizer {
     constructor(text: string, code: string, lastToken: any) {
         super(code)
 
+        this.lastOpenedTag = null
         this.pugPosition = 0
         this.lastToken = lastToken
-        const initialRangeStart = lastToken.range[1]
-        let rangeStart = lastToken.range[1]
-        this.pugTokens = pugLex(text, { plugins: [{
-            advance(lexer: any) {
-                if (lexer.tokens.length) {
-                    const lastProcessedToken = lexer.tokens[lexer.tokens.length - 1]
-                    const rangeEnd = lexer.originalInput.length - lexer.input.length + initialRangeStart
-                    lastProcessedToken.range = [rangeStart, rangeEnd]
-                    rangeStart = rangeEnd
+        let sourcePosition = lastToken.range[1]
+        // const initialRangeStart = lastToken.range[1]
+        // const rangeStart = lastToken.range[1]
+        try {
+            pugLex.Lexer.prototype.incrementLine = function(increment: any) {
+                this.lineno += increment
+                sourcePosition += increment
+                if (increment) {
+                    this.colno = 0
                 }
-            },
-        }] })
+            }
+            pugLex.Lexer.prototype.incrementColumn = function(increment: any) {
+                sourcePosition += increment
+                this.colno += increment
+            }
+            pugLex.Lexer.prototype.tok = function(type: any, val: any) {
+                const res = {
+                    type,
+                    loc: {
+                        start: {
+                            line: this.lineno,
+                            column: this.colno,
+                        },
+                        filename: this.filename,
+                    },
+                    range: [sourcePosition],
+                    val: undefined,
+                }
 
-        this.convertedPugTokens = this.convertPugTokensToHtmlTokens()
+                if (val !== undefined) {
+                    res.val = val
+                }
+
+                return res
+            }
+            pugLex.Lexer.prototype.tokEnd = function(tok: any) {
+                tok.loc.end = {
+                    line: this.lineno,
+                    column: this.colno,
+                }
+                tok.range.push(sourcePosition)
+                return tok
+            }
+
+            this.pugTokens = pugLex(text, { startingLine: lastToken.loc.end.line, startingColumn: lastToken.loc.end.column })
+                // plugins: [{
+                //     advance(lexer: any) {
+                //         console.log("LTL: ", lexer.tokens.length)
+                //         if (lexer.tokens.length) {
+                //             const lastProcessedToken = lexer.tokens[lexer.tokens.length - 1]
+                //             const rangeEnd = lexer.originalInput.length - lexer.input.length + initialRangeStart
+                //             lastProcessedToken.range = [rangeStart, rangeEnd]
+                //             rangeStart = rangeEnd
+                //         }
+                //     },
+                // }]
+
+            this.convertedPugTokens = []
+            this.convertPugTokensToHtmlTokens()
+        }
+        catch (e) {
+            this.errors.push(new ParseError(e.msg, e.code, sourcePosition, e.line, e.column))
+            this.convertedPugTokens = []
+        }
     }
 
 
@@ -61,109 +116,115 @@ export class PugTokenizer extends HTMLTokenizer {
      */
     private convertPugTokensToHtmlTokens(): any {
         try {
-            // console.log(JSON.stringify(this.pugTokens, null, 2))
-            const result = []
+            console.log(JSON.stringify(this.pugTokens, null, 2))
             for (const pt of this.pugTokens) {
-                if (pt.type === "newline") {
-                    result.push({
-                        type: "HTMLWhitespace",
-                        range: pt.range,
-                        loc: {
-                            start: this.lastToken.loc.end,
-                            end: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                        },
-                        value: "\n",
-                    })
-                }
-                else if (pt.type === "tag") {
-                    result.push({
-                        type: "HTMLTagOpen",
-                        range: [
-                            pt.range[0] - 1,
-                            pt.range[1],
-                        ],
-                        loc: {
-                            start: {
-                                line: pt.loc.start.line,
-                                column: pt.loc.start.column - 1,
-                            },
-                            end: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                        },
-                        value: pt.val,
-                    })
-                    result.push({
-                        type: "HTMLTagClose",
-                        range: [pt.range[1], pt.range[1]],
-                        loc: {
-                            start: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                            end: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                        },
-                        value: "",
-                    })
-                    result.push({
-                        type: "HTMLEndTagOpen",
-                        range: [pt.range[1], pt.range[1]],
-                        loc: {
-                            start: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                            end: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                        },
-                        value: pt.val,
-                    })
-                    result.push({
-                        type: "HTMLTagClose",
-                        range: [pt.range[1], pt.range[1]],
-                        loc: {
-                            start: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                            end: {
-                                line: pt.loc.end.line,
-                                column: pt.loc.end.column - 1,
-                            },
-                        },
-                        value: pt.val,
-                    })
-                }
-                else if (pt.type === "start-attributes") {
-                    // nothing
-                }
-                else if (pt.type === "start-attributes") {
-                    // nothing
-                }
-                else if (pt.type === "eos") {
-                    // nothing
-                }
-                else {
-                    result.push(pt)
-                }
-                if (result.length > 0) {
-                    this.lastToken = result[result.length - 1]
+                (this as any)[pt.type](pt)
+                if (this.convertedPugTokens.length > 0) {
+                    this.lastToken = this.convertedPugTokens[this.convertedPugTokens.length - 1]
                 }
             }
-            return result
         }
         catch (e) {
             console.error(e)
         }
-        return []
+    }
+
+    /** */
+    protected indent() : any {
+    }
+    /** */
+    protected outdent() : any {
+    }
+
+    /** */
+    protected newline(pt: any) : any {
+        this.closeLastOpenedTag()
+        this.convertedPugTokens.push({
+            type: "HTMLWhitespace",
+            range: [
+                pt.range[0] - 1,
+                pt.range[1],
+            ],
+            loc: {
+                start: this.lastToken.loc.end,
+                end: {
+                    line: pt.loc.end.line,
+                    column: pt.loc.end.column - 1,
+                },
+            },
+            value: "\n",
+        })
+    }
+
+    /** */
+    protected tag(pt: any) : any {
+        this.closeLastOpenedTag()
+        this.convertedPugTokens.push({
+            type: "HTMLTagOpen",
+            range: [
+                pt.range[0] - 1,
+                pt.range[1],
+            ],
+            loc: pt.loc,
+            value: pt.val,
+        })
+        this.lastOpenedTag = pt
+    }
+    /** */
+    protected closeLastOpenedTag() : any {
+        if (!this.lastOpenedTag) {
+            return
+        }
+        const pt = this.lastOpenedTag
+        this.convertedPugTokens.push({
+            type: "HTMLTagClose",
+            range: [pt.range[1], pt.range[1]],
+            loc: {
+                start: pt.loc.end,
+                end: pt.loc.end,
+            },
+            value: "",
+        })
+        this.convertedPugTokens.push({
+            type: "HTMLEndTagOpen",
+            range: [pt.range[1], pt.range[1]],
+            loc: {
+                start: pt.loc.end,
+                end: pt.loc.end,
+            },
+            value: pt.val,
+        })
+        this.convertedPugTokens.push({
+            type: "HTMLTagClose",
+            range: [pt.range[1], pt.range[1]],
+            loc: {
+                start: pt.loc.end,
+                end: pt.loc.end,
+            },
+            value: pt.val,
+        })
+        this.lastOpenedTag = null
+    }
+    /** */
+    protected "start-attributes"() : any {
+
+    }
+    /** */
+    protected "end-attributes"() : any {
+        this.closeLastOpenedTag()
+    }
+    /** */
+    protected attribute(pt: any) : any {
+        this.convertedPugTokens.push({
+            type: "HTMLIdentifier",
+            range: pt.range,
+            loc: pt.loc,
+            value: pt.name,
+        })
+    }
+    /** */
+    protected eos() : any {
+        this.closeLastOpenedTag()
     }
 }
+/* eslint-enable class-methods-use-this, no-empty-function */

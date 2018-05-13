@@ -17,8 +17,7 @@ const parser = require("../..")
 // Helpers
 //------------------------------------------------------------------------------
 
-const ROOT = path.join(__dirname, "../fixtures/ast")
-const TARGETS = fs.readdirSync(ROOT)
+
 const PARSER_OPTIONS = {
     comment: true,
     ecmaVersion: 2017,
@@ -96,20 +95,31 @@ function getTree(source, ast) {
 //------------------------------------------------------------------------------
 // Main
 //------------------------------------------------------------------------------
+/**
+ * Create simple tree.
+ * @param {string} root root directory of ast files
+ * @returns {void}
+ */
+function updateFixturesInDirectory(root) {
+    const ROOT = path.join(__dirname, root)
+    const TARGETS = fs.readdirSync(ROOT)
+    for (const name of TARGETS) {
+        const sourcePath = path.join(ROOT, `${name}/source.vue`)
+        const astPath = path.join(ROOT, `${name}/ast.json`)
+        const tokenRangesPath = path.join(ROOT, `${name}/token-ranges.json`)
+        const treePath = path.join(ROOT, `${name}/tree.json`)
+        const source = fs.readFileSync(sourcePath, "utf8")
+        const actual = parser.parse(source, Object.assign({ filePath: sourcePath }, PARSER_OPTIONS))
+        const tokenRanges = getAllTokens(actual).map(t => source.slice(t.range[0], t.range[1]))
+        const tree = getTree(source, actual)
 
-for (const name of TARGETS) {
-    const sourcePath = path.join(ROOT, `${name}/source.vue`)
-    const astPath = path.join(ROOT, `${name}/ast.json`)
-    const tokenRangesPath = path.join(ROOT, `${name}/token-ranges.json`)
-    const treePath = path.join(ROOT, `${name}/tree.json`)
-    const source = fs.readFileSync(sourcePath, "utf8")
-    const actual = parser.parse(source, Object.assign({ filePath: sourcePath }, PARSER_OPTIONS))
-    const tokenRanges = getAllTokens(actual).map(t => source.slice(t.range[0], t.range[1]))
-    const tree = getTree(source, actual)
+        console.log("Update:", name)
 
-    console.log("Update:", name)
-
-    fs.writeFileSync(astPath, JSON.stringify(actual, replacer, 4))
-    fs.writeFileSync(tokenRangesPath, JSON.stringify(tokenRanges, replacer, 4))
-    fs.writeFileSync(treePath, JSON.stringify(tree, replacer, 4))
+        fs.writeFileSync(astPath, JSON.stringify(actual, replacer, 4))
+        fs.writeFileSync(tokenRangesPath, JSON.stringify(tokenRanges, replacer, 4))
+        fs.writeFileSync(treePath, JSON.stringify(tree, replacer, 4))
+    }
 }
+
+updateFixturesInDirectory("../fixtures/ast")
+updateFixturesInDirectory("../fixtures/pug-ast")

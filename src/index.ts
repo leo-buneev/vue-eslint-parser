@@ -122,6 +122,10 @@ export function parseForESLint(code: string, options: any): AST.ESLintExtendedPr
                         let spliceArguments: Array<any> = [lastTemplateTagRelatedPosition + 1, concreteInfo.tokens.length - lastTemplateTagRelatedPosition - 1]
                         spliceArguments = spliceArguments.concat(pugAST.tokens)
                         Array.prototype.splice.apply(concreteInfo.tokens, spliceArguments)
+
+
+                        concreteInfo.comments = concreteInfo.comments.concat(pugAST.comments)
+                        concreteInfo.errors = concreteInfo.errors.concat(pugAST.errors)
                         if (pugAST) {
                             result.ast.templateBody = Object.assign(template, concreteInfo, { children: pugAST.children })
                         }
