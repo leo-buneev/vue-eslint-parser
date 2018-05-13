@@ -7,6 +7,7 @@ import * as path from "path"
 import * as AST from "./ast"
 import { LocationCalculator } from "./common/location-calculator"
 import { HTMLParser, HTMLTokenizer } from "./html"
+import { PugTokenizer } from "./pug/tokenizer"
 import { parseScript, parseScriptElement } from "./script"
 import * as services from "./parser-services"
 
@@ -39,6 +40,15 @@ function isTemplateElement(node: AST.VNode): node is AST.VElement {
  */
 function isScriptElement(node: AST.VNode): node is AST.VElement {
     return node.type === "VElement" && node.name === "script"
+}
+
+/**
+ * Check whether the node is a raw text element.
+ * @param node The node to check.
+ * @returns `true` if the node is a raw text element.
+ */
+function isTextElement(node: AST.VNode): node is AST.VText {
+    return node.type === "VText"
 }
 
 /**
@@ -86,9 +96,39 @@ export function parseForESLint(code: string, options: any): AST.ESLintExtendedPr
         result = (script != null)
             ? parseScriptElement(script, locationCalcurator, options)
             : parseScript("", options)
-        result.ast.templateBody = (template != null && templateLang === "html")
-            ? Object.assign(template, concreteInfo)
-            : undefined
+
+        result.ast.templateBody = undefined
+        if (template != null) {
+            if (templateLang === "html") {
+                result.ast.templateBody = Object.assign(template, concreteInfo)
+            }
+            else if (templateLang === "pug") {
+                const pugTextNode = template.children.find(isTextElement)
+                const pugText = pugTextNode && pugTextNode.value
+                if (pugText) {
+                    let lastTemplateTagRelatedToken = null
+                    let lastTemplateTagRelatedPosition = null
+                    for (let i = 0; i < concreteInfo.tokens.length; i++) {
+                        const token = concreteInfo.tokens[i]
+                        if (token.type === "HTMLTagClose") {
+                            lastTemplateTagRelatedToken = token
+                            lastTemplateTagRelatedPosition = i
+                            break
+                        }
+                    }
+                    if (lastTemplateTagRelatedPosition !== null && lastTemplateTagRelatedToken !== null) {
+                        const pugTokenizer = new PugTokenizer(pugText, code, lastTemplateTagRelatedToken)
+                        const pugAST = new HTMLParser(pugTokenizer, options).parse()
+                        let spliceArguments: Array<any> = [lastTemplateTagRelatedPosition + 1, concreteInfo.tokens.length - lastTemplateTagRelatedPosition - 1]
+                        spliceArguments = spliceArguments.concat(pugAST.tokens)
+                        Array.prototype.splice.apply(concreteInfo.tokens, spliceArguments)
+                        if (pugAST) {
+                            result.ast.templateBody = Object.assign(template, concreteInfo, { children: pugAST.children })
+                        }
+                    }
+                }
+            }
+        }
     }
 
     result.services = Object.assign(result.services || {}, services.define(result.ast))

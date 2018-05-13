@@ -398,8 +398,11 @@ export class Parser {
 
                 if (lang !== "html") {
                     this.tokenizer.state = "RAWTEXT"
+                    this.expressionEnabled = false
                 }
-                this.expressionEnabled = true
+                else {
+                    this.expressionEnabled = true
+                }
             }
             if (HTML_RCDATA_TAGS.has(element.name)) {
                 this.tokenizer.state = "RCDATA"

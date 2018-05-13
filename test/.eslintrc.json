@@ -1,3 +1,6 @@
 {
-    "extends": ["mysticatea", "mysticatea/node", "mysticatea/mocha"]
+    "extends": ["mysticatea", "mysticatea/node", "mysticatea/mocha"],
+    "rules": {
+        "complexity": "off"
+    }
 }
